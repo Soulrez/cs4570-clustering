@@ -32,12 +32,59 @@ sns.set_context("notebook", font_scale=1.5,
 
 # We'll generate an animation with matplotlib and moviepy.
 #from moviepy.video.io.bindings import mplfig_to_npimage
-#import moviepy.editor as mpy
+import moviepy.editor as mpy
+
+# This list will contain the positions of the map points at every iteration.
+positions = []
+def _gradient_descent(objective, p0, it, n_iter, n_iter_without_progress=30,
+                      momentum=0.5, learning_rate=1000.0, min_gain=0.01,
+                      min_grad_norm=1e-7, min_error_diff=1e-7, verbose=0,
+                      args=[]):
+    # The documentation of this function can be found in scikit-learn's code.
+    p = p0.copy().ravel()
+    update = np.zeros_like(p)
+    gains = np.ones_like(p)
+    error = np.finfo(np.float).max
+    best_error = np.finfo(np.float).max
+    best_iter = 0
+
+    for i in range(it, n_iter):
+        # We save the current position.
+        positions.append(p.copy())
+
+        new_error, grad = objective(p, *args)
+        error_diff = np.abs(new_error - error)
+        error = new_error
+        grad_norm = linalg.norm(grad)
+
+        if error < best_error:
+            best_error = error
+            best_iter = i
+        elif i - best_iter > n_iter_without_progress:
+            break
+        if min_grad_norm >= grad_norm:
+            break
+        if min_error_diff >= error_diff:
+            break
+
+        inc = update * grad >= 0.0
+        dec = np.invert(inc)
+        gains[inc] += 0.05
+        gains[dec] *= 0.95
+        np.clip(gains, min_gain, np.inf)
+        grad *= gains
+        update = momentum * update - learning_rate * grad
+        p += update
+
+    return p, error, i
+sklearn.manifold.t_sne._gradient_descent = _gradient_descent
+
+
 
 def scatter(x):
     f = plt.figure(figsize=(10, 5))
-    ax = plt.subplot(121)
-    sc = ax.scatter(x[:,0], x[:,1])
+
+    sc = plt.scatter(x[:,0], x[:,1])
     #subplot(122)
     #scatter(X_pca[:, 0], X_pca[:, 1], c=iris.target)
     plt.savefig('tsne-generated.png', dpi=120)
@@ -56,8 +103,25 @@ def scatter(x):
     ax.axis('tight')
     '''
 
-with open('eb_scrubbed') as f:
+def make_frame_mpl(t):
+    i = int(t*40)
+    x = X_iter[..., i]
+    sc.set_offsets(x)
+    for j, txt in zip(range(10), txts):
+        xtext, ytext = np.median(x[y == j, :], axis=0)
+        txt.set_x(xtext)
+        txt.set_y(ytext)
+    return mplfig_to_npimage(f)
+
+
+
+with open('data/xaa') as f:
     data = [map(float, i.split(',')) for i in f]
     print data
-    data_transform = TSNE(learning_rate=100).fit_transform(data)
+    data_transform = TSNE(random_state=RS).fit_transform(data)
+    X_iter = np.dstack(position.reshape(-1, 2)
+                   for position in positions)
     scatter(data_transform)
+    animation = mpy.VideoClip(make_frame_mpl,
+                              duration=X_iter.shape[2]/40.)
+    animation.write_gif("images/animation.gif", fps=20)
