@@ -1,5 +1,7 @@
 #!/bin/bash
 
+python clean_data.py
+
 # Shuffle the data so that it's not organized by ID
 shuf data/eb_stripped > data/eb_shuffled_stripped
 
